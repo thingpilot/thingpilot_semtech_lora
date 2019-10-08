@@ -12,7 +12,7 @@
 
 /** Includes 
  */
-#include <mbed.h>
+#include "mbed.h"
 #include <cstdio>
 #include "lorawan/LoRaWANInterface.h"
 #include "lorawan/system/lorawan_data_structures.h"
@@ -31,9 +31,14 @@ static uint8_t LORAWAN_APP_KEY[] = { 0x66, 0x72, 0x93, 0x0B, 0xE7, 0x5C, 0xD2, 0
  */ 
 class LorawanTP {
 
+    LorawanTP();
+
+    ~LorawanTP();
+
     public: 
     
+    int init();
+    void send_message();
     
-
-    private: 
+    
 };
