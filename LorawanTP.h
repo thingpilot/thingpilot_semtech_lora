@@ -31,14 +31,28 @@ static uint8_t LORAWAN_APP_KEY[] = { 0x66, 0x72, 0x93, 0x0B, 0xE7, 0x5C, 0xD2, 0
  */ 
 class LorawanTP {
 
+    enum
+    {
+        LORA_ERROR                       = -1,
+        LORA_OK                          =  0
+      
+    };
+
     LorawanTP();
 
     ~LorawanTP();
 
     public: 
     
-    int init();
-    void send_message();
+    int init(uint8_t LORAWAN_DEV_EUI[],uint8_t LORAWAN_APP_EUI[],uint8_t LORAWAN_APP_KEY[]);
+    int16_t send_message(uint8_t port, const uint8_t *data, uint16_t length);
+    int16_t receive_message();
+
+    private:
+
+    static void lora_event_handler(lorawan_event_t event);
     
     
 };
+
+  
