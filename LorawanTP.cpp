@@ -11,7 +11,7 @@
 #include "LorawanTP.h"
 #include "mbed_trace.h"
 
-
+Serial a(PC_10, PC_11);
 static EventQueue ev_queue(10 *EVENTS_EVENT_SIZE);
 
 lorawan_app_callbacks_t cbs;
@@ -57,8 +57,10 @@ int LorawanTP::joinTTN()
     
     /** Dispatch the event,if connected it will stop
      */
+    a.printf("Init confirm %d \r\n ", retcode);
     ev_queue.dispatch_forever();
-
+    a.printf("Exit init %d \r\n ", retcode);
+    ev_queue.break_dispatch();
     return LORAWAN_STATUS_OK; 
 
 }
@@ -76,12 +78,13 @@ int LorawanTP::joinTTN()
      *                       i)   0 sucess.
      *                       ii)  Number of bytes written to buffer.
      *                       iii) A negative error code on failure: */
- int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
-
-        int16_t retcode;  
-        retcode=lorawan.send(port, payload, sizeof(*payload), MSG_UNCONFIRMED_FLAG); 
+ int LorawanTP::send_message(uint8_t port, uint8_t *payload, uint16_t length) {
+        
+        //memset(tx_buffer, 0, sizeof(tx_buffer));
+        int8_t retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
         if (retcode < 0) {
-            return retcode;} 
+            return retcode;
+            } 
 
         ev_queue.dispatch_forever();
         return retcode;
@@ -121,19 +124,32 @@ int LorawanTP::joinTTN()
      *                       LORAWAN_STATUS_PARAMETER_INVALID  if NULL data or length is given,
      *                       LORAWAN_STATUS_WOULD_BLOCK        if incorrect port or flags are given, */
     
-    uint8_t * LorawanTP::receive_message(){
+    int64_t LorawanTP::receive_message(){
     ev_queue.dispatch_forever();
-    uint8_t port;
-    int flags;
+    uint8_t port=0;
+    int flags=0;
+    int64_t displayValue=0;
     memset(rx_buffer, 0, sizeof(rx_buffer));
     int64_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
-     
-    if ( retcode<0){
-      // a.printf("\r\nNo Messages received\r\n");
+    if (retcode<0){
        ev_queue.break_dispatch();
-       return 0;
-    }
- return rx_buffer; //pointer to the rx buffer
+       return retcode; 
+       }
+
+    /** Return the result from hex to decimal
+    */
+    if(retcode>0){
+        int y=retcode;
+        displayValue=rx_buffer[y-1];
+        for (int i = 0; i < (retcode-1); i++) {
+            int z=(8*(y-1));
+            displayValue |=(rx_buffer[i]<<z);//+displayValue;
+            y--;
+            }
+
+        }
+ memset(rx_buffer, 0, sizeof(rx_buffer));
+ return displayValue; 
 }
 
 /** Lora Radio sleep & lorawan disconnect.
@@ -158,33 +174,42 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
 {
     switch (event) {
         
-        case CONNECTED: 
+        case CONNECTED:
+            a.printf("\r\nConnection - Successful \r\n");
             ev_queue.break_dispatch();
             break;
         case DISCONNECTED:
             ev_queue.break_dispatch();
+            a.printf("\r\nDisconnected Successfully \r\n");
             break;
         case TX_DONE:
+            a.printf("\r\nMessage Sent to Network Server \r\n");
+            ThisThread::sleep_for(50);
             ev_queue.break_dispatch();
             break;
         case TX_TIMEOUT:
         case TX_ERROR:
         case TX_CRYPTO_ERROR:
         case TX_SCHEDULING_ERROR:
+            a.printf("\r\nTransmission Error - EventCode = %d \r\n", event);
             ev_queue.break_dispatch();
             break;
         case RX_DONE:
+            a.printf("\r\nReceived message from Network Server \r\n");
             ev_queue.break_dispatch();
         case RX_TIMEOUT:
             ev_queue.break_dispatch();
             break;
         case RX_ERROR:
+            a.printf("\r\n Error in reception - Code = %d \r\n", event);
             ev_queue.break_dispatch();
             break;
         case JOIN_FAILURE:
+            a.printf("\r\n OTAA Failed - Check Keys \r\n");
             ev_queue.break_dispatch();
             break;
         case UPLINK_REQUIRED:
+            a.printf("\r\n Uplink required by NS \r\n");
             break;
         default:
             MBED_ASSERT("Unknown Event");

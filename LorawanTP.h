@@ -38,10 +38,9 @@ class LorawanTP {
 
    int joinTTN();
    int sleep();
+  
    int send_message(uint8_t port, uint8_t payload[], uint16_t length);
-   uint8_t * receive_message();
-
-   private:
+   int64_t receive_message();
    static void lora_event_handler(lorawan_event_t event);
   
 };
