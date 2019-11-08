@@ -19,22 +19,37 @@
 #include "events/EventQueue.h"
 #include "lorawan/LoRaRadio.h"
 #include "SX1276_LoRaRadio.h"
+#include "board.h"
 
+/** Struct used to store parameters that enable the storage,
+     *  modification and deletion of entries within a 'file'
+     */
+	
+
+    struct DownlinkData
+    {
+        uint16_t received_value[100];
+        uint8_t port;
+    } ;
+  
 /** Base class for the LorawanTP
  */ 
 class LorawanTP {
+
     public: 
+    
     LorawanTP();
     ~LorawanTP();
-
-   int joinTTN();
-   int sleep();
-  
-   int send_message(uint8_t port, uint8_t payload[], uint16_t length);
-   int64_t receive_message();
-   
-   private:
-   static void lora_event_handler(lorawan_event_t event);
+    
+    int sleep();
+    int join();
+    
+    int send_message(uint8_t port, uint8_t payload[], uint16_t length);
+    DownlinkData receive_message();
+    
+    private:
+    static void lora_event_handler(lorawan_event_t event);
+    
   
 };
 
