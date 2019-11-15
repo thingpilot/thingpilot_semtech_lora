@@ -15,7 +15,7 @@
 static EventQueue ev_queue(10 *EVENTS_EVENT_SIZE);
 
 lorawan_app_callbacks_t cbs;
-Serial a(PC_10, PC_11);
+
 /**
  * Pin definitions are provided manually specific for Thing Pilot mote.
  * The pins that are marked NC are optional. It is assumed that these
@@ -51,21 +51,17 @@ int LorawanTP::join()
    if (retcode!=LORAWAN_STATUS_OK){
         return retcode; 
         }
-    retcode=lorawan.set_device_class(CLASS_C);
-    if (retcode!=LORAWAN_STATUS_OK){
-        return retcode; 
-        }
+    
     retcode=lorawan.enable_adaptive_datarate();
     if (retcode != LORAWAN_STATUS_OK) {
          return retcode; 
          }
-    //lorawan.set_datarate(0);
+    
     cbs.events = mbed::callback(lora_event_handler);
     lorawan.add_app_callbacks(&cbs);
     retcode=lorawan.connect();
     if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS)) {
         retcode=lorawan.connect(); 
-        //return retcode; 
             }
     
 /** Dispatch the event,if connected it will stop
@@ -102,9 +98,12 @@ int LorawanTP::join()
 */        
 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
-   
+  int8_t retcode=lorawan.set_device_class(CLASS_C);
+    if (retcode!=LORAWAN_STATUS_OK){
+        return retcode; 
+        }
 
-    int8_t retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
+    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
     if (retcode < 0) {
         ev_queue.break_dispatch();
         return retcode;
@@ -136,23 +135,27 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
 
-DownlinkData LorawanTP::receive_message(){
+DownlinkData LorawanTP::receive_message(bool get_data){
     struct DownlinkData data;
     uint64_t decimalValue;
-    uint16_t testval;
-    uint8_t port;
+    uint8_t port=0;
     int flags;
+   
+    if (get_data==false){
     memset(rx_buffer, 0, sizeof(rx_buffer));
     ev_queue.dispatch_forever();
     int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
+    data.port=port;
+    data.retcode=retcode;
     if (retcode<=0){
        ev_queue.break_dispatch();
        return data; 
        }
+
 /** Return the result from hex to decimal
-    Port 223 should only be used for setting the time.
+    Port 221 should only be used for setting the time.
     */
-    if(port==221){
+    if(port==CLOCK_SYNCH_PORT){
         time_t time_now=time(NULL);
         int bytes_to_buffer=retcode;
         decimalValue=rx_buffer[bytes_to_buffer-1];
@@ -162,32 +165,31 @@ DownlinkData LorawanTP::receive_message(){
                 bytes_to_buffer--;
             }
         memset(rx_buffer, 0, sizeof(rx_buffer));
-        testval=decimalValue;
-        data.received_value[0]=testval;
-        a.printf("Time now: %d\r\n",data.received_value[0]);
-        data.port=port;
+        
+        data.received_value[0]=decimalValue;
+        data.port=0;
         if (decimalValue>time_now){
-
-            set_time(decimalValue);
+            set_time(decimalValue+10);
+            data.port=port;
             }
-        ev_queue.break_dispatch();
-        return data;
+      
       } 
     
-    if(port==222){
-        data.port=port;
+    if(port==SCHEDULER_PORT){
         int bytes_to_buffer=retcode;
         for (int i = 0; i < retcode; i++) {
             data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
-            a.printf("Value %i:  %d\r\n",i,data.received_value[i]);
             i++;
             }
         memset(rx_buffer, 0, sizeof(rx_buffer));
-        ev_queue.break_dispatch();
-        return data;
+        
       }
+
+     if(port==RESET_PORT){
+         NVIC_SystemReset();
+     }
       else{
-        time_t time_now=time(NULL);
+        data.port=port;
         int bytes_to_buffer=retcode;
         decimalValue=rx_buffer[bytes_to_buffer-1];
         for (int i = 0; i < (retcode-1); i++) {
@@ -195,15 +197,15 @@ DownlinkData LorawanTP::receive_message(){
                 decimalValue |=(rx_buffer[i]<<shift_bytes);
                 bytes_to_buffer--;
             }
-        memset(rx_buffer, 0, sizeof(rx_buffer));
         data.received_value[0]=decimalValue;
-        a.printf("Uplink %d\r\n",data.received_value[0]);
-        data.port=port;
-        ev_queue.break_dispatch();
-        return data;
+        memset(rx_buffer, 0, sizeof(rx_buffer));
+      
       }
    
     ev_queue.break_dispatch();
+    
+   }
+    
     return data;
 }
 

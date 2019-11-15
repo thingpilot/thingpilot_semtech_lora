@@ -19,7 +19,12 @@
 #include "events/EventQueue.h"
 #include "lorawan/LoRaRadio.h"
 #include "SX1276_LoRaRadio.h"
-#include "board.h"
+
+
+#define CLOCK_SYNCH_ACK_PORT   220
+#define CLOCK_SYNCH_PORT 221
+#define SCHEDULER_PORT 222
+#define RESET_PORT  223
 
 /** Struct used to store parameters that enable the storage,
      *  modification and deletion of entries within a 'file'
@@ -28,8 +33,10 @@
 
     struct DownlinkData
     {
-        uint16_t received_value[100];
+        uint16_t received_value[MAX_BUFFER_READING_TIMES];
         uint8_t port;
+        int8_t retcode;
+        
     } ;
   
 /** Base class for the LorawanTP
@@ -45,7 +52,7 @@ class LorawanTP {
     int join();
     
     int send_message(uint8_t port, uint8_t payload[], uint16_t length);
-    DownlinkData receive_message();
+    DownlinkData receive_message(bool get_data);
     
     private:
     static void lora_event_handler(lorawan_event_t event);
