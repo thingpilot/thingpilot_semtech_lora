@@ -21,13 +21,13 @@ lorawan_app_callbacks_t cbs;
  * The pins that are marked NC are optional. It is assumed that these
  * pins are not connected until/unless configured otherwise. */
 
-#if defined (BOARD) && (BOARD ==TP_DEVELOPMENT_BOARD_V1_1_0)
+// #if defined (BOARD) && (BOARD ==TP_DEVELOPMENT_BOARD_V1_1_0)
     
-    SX1276_LoRaRadio myradio(PA_7,PA_6,PA_5,PB_13,D7,PC_6,PC_7,PC_8,PB_14,PB_15,PC_9,
-                           NC,NC,NC,NC,NC,NC,NC);
+//     SX1276_LoRaRadio myradio(PA_7,PA_6,PA_5,PB_13,D7,PC_6,PC_7,PC_8,PB_14,PB_15,PC_9,
+//                            NC,NC,NC,NC,NC,NC,NC);
 
     
-#endif 
+// #endif 
 #if defined (BOARD) && (BOARD ==TP_EARHART_V1_0_0)
     
     SX1276_LoRaRadio myradio(TP_LORA_SPI_MOSI,TP_LORA_SPI_MISO,TP_LORA_SPI_SCK,TP_LORA_SPI_NSS,TP_LORA_RESET,PB_4,PB_1,PB_0,PC_13,NC,NC,
