@@ -20,13 +20,26 @@ lorawan_app_callbacks_t cbs;
  * Pin definitions are provided manually specific for Thing Pilot mote.
  * The pins that are marked NC are optional. It is assumed that these
  * pins are not connected until/unless configured otherwise. */
-SX1276_LoRaRadio myradio(PA_7,PA_6,PA_5,PB_13,D7,PC_6,PC_7,PC_8,PB_14,PB_15,PC_9,
-                            NC,NC,NC,NC,NC,NC,NC);
-//for murata
-// SX1276_LoRaRadio myradio(TP_LORA_SPI_MOSI,TP_LORA_SPI_MISO,TP_LORA_SPI_SCK,TP_LORA_SPI_NSS,TP_LORA_RESET,PB_4,PB_1,PB_0,PC_13,NC,NC,
-//                             NC,NC,PC_2,PA_1,NC,PC_1,PA_12);
 
+#if defined (BOARD) && (BOARD ==TP_DEVELOPMENT_BOARD_V1_1_0)
+    
+    SX1276_LoRaRadio myradio(PA_7,PA_6,PA_5,PB_13,D7,PC_6,PC_7,PC_8,PB_14,PB_15,PC_9,
+                           NC,NC,NC,NC,NC,NC,NC);
+
+    
+#endif 
+#if defined (BOARD) && (BOARD ==TP_EARHART_V1_0_0)
+    
+    SX1276_LoRaRadio myradio(TP_LORA_SPI_MOSI,TP_LORA_SPI_MISO,TP_LORA_SPI_SCK,TP_LORA_SPI_NSS,TP_LORA_RESET,PB_4,PB_1,PB_0,PC_13,NC,NC,
+                            NC,NC,PC_2,PA_1,NC,PC_1,PA_12);
+    
+#endif
+
+//for murata
+
+#if defined (BOARD) && (BOARD ==TP_EARHART_V1_0_0)
 LoRaWANInterface lorawan(myradio);
+#endif
 
 /** Rx_buffer size
  */
@@ -46,6 +59,7 @@ LorawanTP:: ~LorawanTP(){
     *                      ii) A negative error code on failure. */
 int LorawanTP::join()
 {    
+#if defined (BOARD) && (BOARD ==TP_EARHART_V1_0_0)
    lorawan_status_t retcode;
    retcode = lorawan.initialize(&ev_queue);
    if (retcode!=LORAWAN_STATUS_OK){
@@ -68,6 +82,7 @@ int LorawanTP::join()
     */
     ev_queue.dispatch_forever();
     ev_queue.break_dispatch();
+#endif
     return LORAWAN_STATUS_OK; 
 }
  /** Send a message from the Network Server on a specific port.
@@ -98,7 +113,9 @@ int LorawanTP::join()
 */        
 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
-  int8_t retcode=lorawan.set_device_class(CLASS_C);
+    int8_t retcode=0;
+#if defined (BOARD) && (BOARD ==TP_EARHART_V1_0_0)
+    retcode=lorawan.set_device_class(CLASS_C);
     if (retcode!=LORAWAN_STATUS_OK){
         return retcode; 
         }
@@ -109,7 +126,7 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
         return retcode;
         } 
     ev_queue.dispatch_forever();
-
+#endif
     return retcode;
        }
 
@@ -137,6 +154,8 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
 
 DownlinkData LorawanTP::receive_message(bool get_data){
     struct DownlinkData data;
+    #if defined (BOARD) && (BOARD ==TP_EARHART_V1_0_0)
+    
     uint64_t decimalValue;
     uint8_t port=0;
     int flags;
@@ -205,7 +224,7 @@ DownlinkData LorawanTP::receive_message(bool get_data){
     ev_queue.break_dispatch();
     
    }
-    
+  #endif  
     return data;
 }
 
@@ -215,12 +234,15 @@ DownlinkData LorawanTP::receive_message(bool get_data){
     *                       i)LORAWAN_STATUS_OK (the statuses are reversed-simplicity reasons) on sucessfull disconnection,
     *                       ii) A negative error code (-1011) on failure to disconeect . */
 int LorawanTP::sleep(){
+    #if defined (TP_EARHART_V1_0_0)
     ev_queue.break_dispatch();
+    
     myradio.sleep();
     int retcode=lorawan.disconnect();
     if (retcode==LORAWAN_STATUS_DEVICE_OFF){
         return LORAWAN_STATUS_OK;   
     }
+    #endif
     return LORAWAN_STATUS_DEVICE_OFF;
     }
 
