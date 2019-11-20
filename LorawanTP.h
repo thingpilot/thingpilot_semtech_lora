@@ -10,8 +10,6 @@
  */
 #pragma once
 
-
-
 /** Includes 
  */
 #include "mbed.h"
@@ -27,6 +25,8 @@
 #define CLOCK_SYNCH_PORT 221
 #define SCHEDULER_PORT 222
 #define RESET_PORT  223
+
+
 
 /** Struct used to store parameters that enable the storage,
      *  modification and deletion of entries within a 'file'
