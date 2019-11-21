@@ -12,27 +12,25 @@
 
 /** EventQueue for dispatching events
  */
-static EventQueue ev_queue(10 *EVENTS_EVENT_SIZE);
+static EventQueue ev_queue(20 *EVENTS_EVENT_SIZE);
 
 lorawan_app_callbacks_t cbs;
 
 
-// SX1276_LoRaRadio myradio(TP_LORA_SPI_MOSI,TP_LORA_SPI_MISO,TP_LORA_SPI_SCK,TP_LORA_SPI_NSS,TP_LORA_RESET,NC,NC,NC,NC,NC,NC,
-//                             NC,NC,NC,PC_2,NC,NC,TP_VDD_TCXO);
-
-SX1276_LoRaRadio myradio(TP_LORA_SPI_MOSI,TP_LORA_SPI_MISO,TP_LORA_SPI_SCK,TP_LORA_SPI_NSS,TP_LORA_RESET,PB_4,PB_1,PB_0,PC_13,NC,NC,
-                            NC,NC,PC_2,PA_1,NC,PC_1,TP_VDD_TCXO);
-LoRaWANInterface lorawan(myradio);
-
-/** Rx_buffer size
+/** Constructor for the LorawanTP class
  */
-uint8_t rx_buffer[51];
-
-LorawanTP::LorawanTP(){
+LorawanTP::LorawanTP(PinName mosi,PinName miso,PinName sclk,PinName nss,PinName reset,PinName dio0,PinName dio1,PinName dio2,
+                     PinName dio3,PinName dio4,PinName dio5,PinName rf_switch_ctl1,PinName rf_switch_ctl2,PinName txctl,
+                     PinName rxctl,PinName ant_switch,PinName pwr_amp_ctl,PinName tcxo): 
+                     _myradio(mosi,miso,sclk,nss,reset,dio0,dio1,dio2,dio3,dio4,dio5,rf_switch_ctl1,rf_switch_ctl2,txctl,
+                     rxctl,ant_switch,pwr_amp_ctl,tcxo), lorawan(_myradio) {
+          
 }
-/** 
+
+/** Destructor for the LorawanTP class
  */
 LorawanTP:: ~LorawanTP(){
+   _myradio.~SX1276_LoRaRadio();
 }
 
 /** Join the TTN Network Server.
@@ -41,25 +39,25 @@ LorawanTP:: ~LorawanTP(){
     *                       i)  0 sucess.
     *                      ii) A negative error code on failure. */
 int LorawanTP::join()
-{    
-
-   lorawan_status_t retcode;
-   retcode = lorawan.initialize(&ev_queue);
-   if (retcode!=LORAWAN_STATUS_OK){
-        return retcode; 
-        }
-    
-    retcode=lorawan.enable_adaptive_datarate();
-    if (retcode != LORAWAN_STATUS_OK) {
-         return retcode; 
-         }
-    
+{   
+    lorawan_status_t retcode;
+    retcode = lorawan.initialize(&ev_queue);
+    if (retcode!=LORAWAN_STATUS_OK){
+            return retcode; 
+            }
     cbs.events = mbed::callback(lora_event_handler);
     lorawan.add_app_callbacks(&cbs);
-    retcode=lorawan.connect();
-    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS)) {
+  
+    retcode=lorawan.enable_adaptive_datarate();
+    if (retcode != LORAWAN_STATUS_OK) {
+        return retcode; 
+        }
+
+        retcode=lorawan.connect();
+    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) {
         retcode=lorawan.connect(); 
-            }
+       // return retcode;
+    }
     
 /** Dispatch the event,if connected it will stop
     */
@@ -97,6 +95,7 @@ int LorawanTP::join()
 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     int8_t retcode=0;
+  
     retcode=lorawan.set_device_class(CLASS_C);
     if (retcode!=LORAWAN_STATUS_OK){
         return retcode; 
@@ -135,6 +134,8 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     *                       iii) A negative error code on failure. */
 
 DownlinkData LorawanTP::receive_message(bool get_data){
+   
+    uint8_t rx_buffer[51];
     struct DownlinkData data;
     uint64_t decimalValue;
     uint8_t port=0;
@@ -181,7 +182,6 @@ DownlinkData LorawanTP::receive_message(bool get_data){
             i++;
             }
         memset(rx_buffer, 0, sizeof(rx_buffer));
-        
       }
 
      if(port==RESET_PORT){
@@ -214,10 +214,10 @@ DownlinkData LorawanTP::receive_message(bool get_data){
     *                       i)LORAWAN_STATUS_OK (the statuses are reversed-simplicity reasons) on sucessfull disconnection,
     *                       ii) A negative error code (-1011) on failure to disconeect . */
 int LorawanTP::sleep(){
-   
+  
     ev_queue.break_dispatch();
     
-    myradio.sleep();
+    _myradio.sleep();
     int retcode=lorawan.disconnect();
     if (retcode==LORAWAN_STATUS_DEVICE_OFF){
         return LORAWAN_STATUS_OK;   
