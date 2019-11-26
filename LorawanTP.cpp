@@ -187,6 +187,15 @@ DownlinkData LorawanTP::receive_message(bool get_data){
      if(port==RESET_PORT){
          NVIC_SystemReset();
      }
+
+     if(port==SCHEDULER_PORT){
+        int bytes_to_buffer=retcode;
+        for (int i = 0; i < retcode; i++) {
+            data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
+            i++;
+            }
+        memset(rx_buffer, 0, sizeof(rx_buffer));
+      }
       else{
         data.port=port;
         int bytes_to_buffer=retcode;
