@@ -57,8 +57,8 @@ class LorawanTP {
     * @return              It could be one of these:
     *                       i)  0 sucess.
     *                      ii) A negative error code on failure. */
-    int join();
-    
+    int joinA();
+    int joinC();
     /** Send a message from the Network Server on a specific port.
     *
     * @param port          The application port number. Port numbers 0 and 224 are reserved,
