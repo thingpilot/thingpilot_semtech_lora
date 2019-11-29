@@ -109,7 +109,7 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
 {
     int8_t retcode=0;
     retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
-    if (retcode < 0) 
+    if (retcode < LORAWAN_STATUS_OK) 
     {
         ev_queue.break_dispatch();
         return retcode;
@@ -156,7 +156,7 @@ DownlinkData LorawanTP::receive_message(bool get_data)
         int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
         data.port=port;
         data.retcode=retcode;
-        if (retcode<=0)
+        if (retcode<=LORAWAN_STATUS_OK)
         {
             ev_queue.break_dispatch();
             return data; 
