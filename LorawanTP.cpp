@@ -115,6 +115,7 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
         return retcode;
     } 
     ev_queue.dispatch_forever();
+
     return retcode;
        }
 
@@ -265,19 +266,42 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
     switch (event) 
     {
         case CONNECTED:
+            ev_queue.break_dispatch();
+            break;
         case DISCONNECTED:
+            ev_queue.break_dispatch();
+            break;
         case TX_DONE:
+            ev_queue.break_dispatch();
+            break;
         case TX_TIMEOUT:
+            ev_queue.break_dispatch();
+            break;
         case TX_ERROR:
+            ev_queue.break_dispatch();
+            break;
         case TX_CRYPTO_ERROR:
+            ev_queue.break_dispatch();
+            break;
         case TX_SCHEDULING_ERROR:
+            ev_queue.break_dispatch();
+            break;
         case RX_DONE:
+            ev_queue.break_dispatch();
+            break;
         case RX_TIMEOUT:
+            ev_queue.break_dispatch();
+            break;
         case RX_ERROR:
+            ev_queue.break_dispatch();
+            break;
         case JOIN_FAILURE:
+            ev_queue.break_dispatch();
+            break;
         case UPLINK_REQUIRED:
         case AUTOMATIC_UPLINK_ERROR:
             ev_queue.break_dispatch();
+        
             break;
         default:
             MBED_ASSERT("Unknown Event");
