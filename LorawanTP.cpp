@@ -1,6 +1,6 @@
 /**
   * @file    LorawanTP.cpp
-  * @version 1.1.0
+  * @version 0.2.0
   * @author  Rafaella Neofytou
   * @brief   C++ file of the SX1276 driver module. 
   * Handles communication with the thingpilot nodes utilising the SX1276 (or compatible) modem
@@ -23,13 +23,15 @@ LorawanTP::LorawanTP(PinName mosi,PinName miso,PinName sclk,PinName nss,PinName 
                      PinName dio3,PinName dio4,PinName dio5,PinName rf_switch_ctl1,PinName rf_switch_ctl2,PinName txctl,
                      PinName rxctl,PinName ant_switch,PinName pwr_amp_ctl,PinName tcxo): 
                      _myradio(mosi,miso,sclk,nss,reset,dio0,dio1,dio2,dio3,dio4,dio5,rf_switch_ctl1,rf_switch_ctl2,txctl,
-                     rxctl,ant_switch,pwr_amp_ctl,tcxo), lorawan(_myradio) {
+                     rxctl,ant_switch,pwr_amp_ctl,tcxo), lorawan(_myradio) 
+{
           
 }
 
 /** Destructor for the LorawanTP class
  */
-LorawanTP:: ~LorawanTP(){
+LorawanTP:: ~LorawanTP()
+{
    _myradio.~SX1276_LoRaRadio();
 }
 
@@ -38,29 +40,34 @@ LorawanTP:: ~LorawanTP(){
     * @return              It could be one of these:
     *                       i)  0 sucess.
     *                      ii) A negative error code on failure. */
-int LorawanTP::joinA()
+int LorawanTP::join(const device_class_t device_class)
 {   
     lorawan_status_t retcode;
     retcode = lorawan.initialize(&ev_queue);
-    if (retcode!=LORAWAN_STATUS_OK){
-            return retcode; 
-            }
-    retcode=lorawan.set_device_class(CLASS_A);
-    if (retcode!=LORAWAN_STATUS_OK){
+    if (retcode!=LORAWAN_STATUS_OK)
+    {
         return retcode; 
-        }
+    }
+    retcode=lorawan.set_device_class(device_class);
+    if (retcode!=LORAWAN_STATUS_OK)
+    {
+        return retcode; 
+    }
     cbs.events = mbed::callback(lora_event_handler);
     lorawan.add_app_callbacks(&cbs);
   
     retcode=lorawan.enable_adaptive_datarate();
-    if (retcode != LORAWAN_STATUS_OK) {
+    if (retcode != LORAWAN_STATUS_OK) 
+    {
         return retcode; 
-        }
+    }
 
-        retcode=lorawan.connect();
-    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) {
-        retcode=lorawan.connect(); 
-       // return retcode;
+    retcode=lorawan.connect();
+    /**TODO: CHECK with OTAA and ABP return codes*/
+    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) 
+    {
+        //retcode=lorawan.connect(); 
+       // return retcode; 
     }
     
 /** Dispatch the event,if connected it will stop
@@ -70,38 +77,7 @@ int LorawanTP::joinA()
 
     return LORAWAN_STATUS_OK; 
 }
-int LorawanTP::joinC()
-{   
-    lorawan_status_t retcode;
-    retcode = lorawan.initialize(&ev_queue);
-    if (retcode!=LORAWAN_STATUS_OK){
-            return retcode; 
-            }
-    retcode=lorawan.set_device_class(CLASS_C);
-    if (retcode!=LORAWAN_STATUS_OK){
-        return retcode; 
-        }
-    cbs.events = mbed::callback(lora_event_handler);
-    lorawan.add_app_callbacks(&cbs);
-  
-    retcode=lorawan.enable_adaptive_datarate();
-    if (retcode != LORAWAN_STATUS_OK) {
-        return retcode; 
-        }
 
-        retcode=lorawan.connect();
-    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) {
-        retcode=lorawan.connect(); 
-       // return retcode;
-    }
-    
-/** Dispatch the event,if connected it will stop
-    */
-    ev_queue.dispatch_forever();
-    ev_queue.break_dispatch();
-
-    return LORAWAN_STATUS_OK; 
-}
  /** Send a message from the Network Server on a specific port.
     *
     * @param port          The application port number. Port numbers 0 and 224 are reserved,
@@ -129,14 +105,15 @@ int LorawanTP::joinC()
     *                      LORAWAN_STATUS_PARAMETER_INVALID if NULL data pointer is given or flags are invalid
 */        
 
-int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
+int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
+{
     int8_t retcode=0;
-
     retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
-    if (retcode < 0) {
+    if (retcode < 0) 
+    {
         ev_queue.break_dispatch();
         return retcode;
-        } 
+    } 
     ev_queue.dispatch_forever();
     return retcode;
        }
@@ -163,86 +140,84 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
 
-DownlinkData LorawanTP::receive_message(bool get_data){
+DownlinkData LorawanTP::receive_message(bool get_data)
+{
     uint8_t rx_buffer[10];
     struct DownlinkData data;
     uint64_t decimalValue;
     uint8_t port=0;
     int flags;
-   
-    if (get_data==false){
-    memset(rx_buffer, 0, sizeof(rx_buffer));
-    ev_queue.dispatch_forever();
-    int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
-    data.port=port;
-    data.retcode=retcode;
-    if (retcode<=0){
-       ev_queue.break_dispatch();
-       return data; 
-       }
 
-/** Return the result from hex to decimal
-    Port 221 should only be used for setting the time.
-    */
-    if(port==CLOCK_SYNCH_PORT){
-        time_t time_now=time(NULL);
-        int bytes_to_buffer=retcode;
-        decimalValue=rx_buffer[bytes_to_buffer-1];
-        for (int i = 0; i < (retcode-1); i++) {
-                int shift_bytes=(8*(bytes_to_buffer-1));
-                decimalValue |=(rx_buffer[i]<<shift_bytes);
-                bytes_to_buffer--;
-            }
+    if (get_data==false)
+    {
         memset(rx_buffer, 0, sizeof(rx_buffer));
-        
-        data.received_value[0]=decimalValue;
-        data.port=0;
-        if (decimalValue>time_now){
-            set_time(decimalValue+10);
-            data.port=port;
-            }
-      
-      } 
-    
-    if(port==SCHEDULER_PORT){
-        int bytes_to_buffer=retcode;
-        for (int i = 0; i < retcode; i++) {
-            data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
-            i++;
-            }
-        memset(rx_buffer, 0, sizeof(rx_buffer));
-      }
-
-     if(port==RESET_PORT){
-         NVIC_SystemReset();
-     }
-
-    //  if(port==SCHEDULER_PORT){
-    //     int bytes_to_buffer=retcode;
-    //     for (int i = 0; i < retcode; i++) {
-    //         data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
-    //         i++;
-    //         }
-    //     memset(rx_buffer, 0, sizeof(rx_buffer));
-    //   }
-      else{
+        ev_queue.dispatch_forever();
+        int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
         data.port=port;
-        int bytes_to_buffer=retcode;
-        decimalValue=rx_buffer[bytes_to_buffer-1];
-        for (int i = 0; i < (retcode-1); i++) {
+        data.retcode=retcode;
+        if (retcode<=0)
+        {
+            ev_queue.break_dispatch();
+            return data; 
+        }
+    /** Return the result from hex to decimal
+        Port 221 should only be used for setting the time.
+        */
+        if(port==CLOCK_SYNCH_PORT)
+        {
+            time_t time_now=time(NULL);
+            int bytes_to_buffer=retcode;
+            decimalValue=rx_buffer[bytes_to_buffer-1];
+            for (int i = 0; i < (retcode-1); i++) 
+            {
                 int shift_bytes=(8*(bytes_to_buffer-1));
                 decimalValue |=(rx_buffer[i]<<shift_bytes);
                 bytes_to_buffer--;
             }
-        data.received_value[0]=decimalValue;
-        memset(rx_buffer, 0, sizeof(rx_buffer));
-      
-      }
-   
-    ev_queue.break_dispatch();
-    
+            memset(rx_buffer, 0, sizeof(rx_buffer));
+            
+            data.received_value[0]=decimalValue;
+            data.port=0;
+            if (decimalValue>time_now)
+            {
+                set_time(decimalValue+10);
+                data.port=port;
+            }
+        } 
+        
+        if(port==SCHEDULER_PORT)
+        {
+            int bytes_to_buffer=retcode;
+            for (int i = 0; i < retcode; i++)
+            {
+                data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
+                i++;
+            }
+            memset(rx_buffer, 0, sizeof(rx_buffer));
+        }
+
+        if(port==RESET_PORT)
+        {
+            NVIC_SystemReset();
+        }
+
+        else
+        {
+            data.port=port;
+            int bytes_to_buffer=retcode;
+            decimalValue=rx_buffer[bytes_to_buffer-1];
+            for (int i = 0; i < (retcode-1); i++) 
+            {
+                int shift_bytes=(8*(bytes_to_buffer-1));
+                decimalValue |=(rx_buffer[i]<<shift_bytes);
+                bytes_to_buffer--;
+            }
+            data.received_value[0]=decimalValue;
+            memset(rx_buffer, 0, sizeof(rx_buffer));
+        }
+
+        ev_queue.break_dispatch();
    }
-  
     return data;
 }
 
@@ -251,16 +226,15 @@ DownlinkData LorawanTP::receive_message(bool get_data){
     * @return              It could be one of these:
     *                       i)LORAWAN_STATUS_OK (the statuses are reversed-simplicity reasons) on sucessfull disconnection,
     *                       ii) A negative error code (-1011) on failure to disconeect . */
-int LorawanTP::sleep(){
-  
+int LorawanTP::sleep()
+{
     ev_queue.break_dispatch();
-    
     _myradio.sleep();
     int retcode=lorawan.disconnect();
-    if (retcode==LORAWAN_STATUS_DEVICE_OFF){
+    if (retcode==LORAWAN_STATUS_DEVICE_OFF)
+    {
         return LORAWAN_STATUS_OK;   
     }
-   
     return LORAWAN_STATUS_DEVICE_OFF;
     }
 
@@ -288,44 +262,22 @@ int LorawanTP::sleep(){
 
 void LorawanTP::lora_event_handler(lorawan_event_t event)
 {
-    switch (event) {
+    switch (event) 
+    {
         case CONNECTED:
-            ev_queue.break_dispatch();
-            break;
         case DISCONNECTED:
-            ev_queue.break_dispatch();
-            break;
         case TX_DONE:
-            ev_queue.break_dispatch();
-            break;
         case TX_TIMEOUT:
-            ev_queue.break_dispatch();
-            break;
         case TX_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case TX_CRYPTO_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case TX_SCHEDULING_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case RX_DONE:
-            ev_queue.break_dispatch();
-            break;
         case RX_TIMEOUT:
-            ev_queue.break_dispatch();
-            break;
         case RX_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case JOIN_FAILURE:
-            ev_queue.break_dispatch();
-            break;
         case UPLINK_REQUIRED:
         case AUTOMATIC_UPLINK_ERROR:
             ev_queue.break_dispatch();
-        
             break;
         default:
             MBED_ASSERT("Unknown Event");

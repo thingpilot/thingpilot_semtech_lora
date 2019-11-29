@@ -1,6 +1,6 @@
 /**
   * @file    LorawanTP.h
-  * @version 1.1.0
+  * @version 0.2.0
   * @author  Rafaella Nofytou
   * @brief   Header file of the SX1276 driver module. 
   * Handles communication with the thingpilot nodes utilising the SX1276 (or compatible) modem
@@ -30,12 +30,12 @@
 /** Struct used to store parameters that enable the storage,
      *  modification and deletion of entries
      */
-    struct DownlinkData
-    {
-        uint16_t received_value[MAX_BUFFER_READING_TIMES];
-        uint8_t port;
-        int8_t retcode;  
-    } ;
+struct DownlinkData
+{
+    uint16_t received_value[MAX_BUFFER_READING_TIMES];
+    uint8_t port;
+    int8_t retcode;  
+} ;
   
 /** Base class for the ThingPilot LorawanTP interface
  */ 
@@ -52,13 +52,14 @@ class LorawanTP {
  */
     ~LorawanTP();
 
-    /** Join the TTN Network Server.
+    /** Join the TTN Network Server with Class A or C.
     *
-    * @return              It could be one of these:
+    * @param device_class   Currently Only Support CLASS_A or CLASS_C, CLASS_B is not yet supported 
+    * @return               It could be one of these:
     *                       i)  0 sucess.
     *                      ii) A negative error code on failure. */
-    int joinA();
-    int joinC();
+    int join(const device_class_t device_class);
+    
     /** Send a message from the Network Server on a specific port.
     *
     * @param port          The application port number. Port numbers 0 and 224 are reserved,
