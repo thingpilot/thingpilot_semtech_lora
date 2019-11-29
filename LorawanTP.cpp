@@ -38,13 +38,49 @@ LorawanTP:: ~LorawanTP(){
     * @return              It could be one of these:
     *                       i)  0 sucess.
     *                      ii) A negative error code on failure. */
-int LorawanTP::join()
+int LorawanTP::joinA()
 {   
     lorawan_status_t retcode;
     retcode = lorawan.initialize(&ev_queue);
     if (retcode!=LORAWAN_STATUS_OK){
             return retcode; 
             }
+    retcode=lorawan.set_device_class(CLASS_A);
+    if (retcode!=LORAWAN_STATUS_OK){
+        return retcode; 
+        }
+    cbs.events = mbed::callback(lora_event_handler);
+    lorawan.add_app_callbacks(&cbs);
+  
+    retcode=lorawan.enable_adaptive_datarate();
+    if (retcode != LORAWAN_STATUS_OK) {
+        return retcode; 
+        }
+
+        retcode=lorawan.connect();
+    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) {
+        retcode=lorawan.connect(); 
+       // return retcode;
+    }
+    
+/** Dispatch the event,if connected it will stop
+    */
+    ev_queue.dispatch_forever();
+    ev_queue.break_dispatch();
+
+    return LORAWAN_STATUS_OK; 
+}
+int LorawanTP::joinC()
+{   
+    lorawan_status_t retcode;
+    retcode = lorawan.initialize(&ev_queue);
+    if (retcode!=LORAWAN_STATUS_OK){
+            return retcode; 
+            }
+    retcode=lorawan.set_device_class(CLASS_C);
+    if (retcode!=LORAWAN_STATUS_OK){
+        return retcode; 
+        }
     cbs.events = mbed::callback(lora_event_handler);
     lorawan.add_app_callbacks(&cbs);
   
@@ -95,11 +131,6 @@ int LorawanTP::join()
 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     int8_t retcode=0;
-  
-    retcode=lorawan.set_device_class(CLASS_C);
-    if (retcode!=LORAWAN_STATUS_OK){
-        return retcode; 
-        }
 
     retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
     if (retcode < 0) {
@@ -107,7 +138,6 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
         return retcode;
         } 
     ev_queue.dispatch_forever();
-
     return retcode;
        }
 
@@ -134,8 +164,7 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     *                       iii) A negative error code on failure. */
 
 DownlinkData LorawanTP::receive_message(bool get_data){
-   
-    uint8_t rx_buffer[51];
+    uint8_t rx_buffer[10];
     struct DownlinkData data;
     uint64_t decimalValue;
     uint8_t port=0;
@@ -188,14 +217,14 @@ DownlinkData LorawanTP::receive_message(bool get_data){
          NVIC_SystemReset();
      }
 
-     if(port==SCHEDULER_PORT){
-        int bytes_to_buffer=retcode;
-        for (int i = 0; i < retcode; i++) {
-            data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
-            i++;
-            }
-        memset(rx_buffer, 0, sizeof(rx_buffer));
-      }
+    //  if(port==SCHEDULER_PORT){
+    //     int bytes_to_buffer=retcode;
+    //     for (int i = 0; i < retcode; i++) {
+    //         data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
+    //         i++;
+    //         }
+    //     memset(rx_buffer, 0, sizeof(rx_buffer));
+    //   }
       else{
         data.port=port;
         int bytes_to_buffer=retcode;
