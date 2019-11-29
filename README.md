@@ -1,6 +1,6 @@
 # Thing Pilot lorawan Release Notes
 **v0.2.0** *29/11/2019*
- -To be used with SX1276 (or compatible) && STM32L0xx
+ - To be used with SX1276 (or compatible) && STM32L0xx
  - Operating in Class C and Class A
  - Bug fix (Hanging-downlink)
  - Accepts Downlinks only in a hex format, returns a decimal value
