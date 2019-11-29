@@ -117,7 +117,7 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
     ev_queue.dispatch_forever();
 
     return retcode;
-       }
+}
 
 /** Receives a message from the Network Server on a specific port.
     *
