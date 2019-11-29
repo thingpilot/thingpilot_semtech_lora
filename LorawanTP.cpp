@@ -1,6 +1,6 @@
 /**
   * @file    LorawanTP.cpp
-  * @version 1.1.0
+  * @version 0.2.0
   * @author  Rafaella Neofytou
   * @brief   C++ file of the SX1276 driver module. 
   * Handles communication with the thingpilot nodes utilising the SX1276 (or compatible) modem
@@ -12,31 +12,27 @@
 
 /** EventQueue for dispatching events
  */
-static EventQueue ev_queue(10 *EVENTS_EVENT_SIZE);
+static EventQueue ev_queue(20 *EVENTS_EVENT_SIZE);
 
 lorawan_app_callbacks_t cbs;
-Serial a(PC_10, PC_11);
-/**
- * Pin definitions are provided manually specific for Thing Pilot mote.
- * The pins that are marked NC are optional. It is assumed that these
- * pins are not connected until/unless configured otherwise. */
-SX1276_LoRaRadio myradio(PA_7,PA_6,PA_5,PB_13,D7,PC_6,PC_7,PC_8,PB_14,PB_15,PC_9,
-                            NC,NC,NC,NC,NC,NC,NC);
-//for murata
-// SX1276_LoRaRadio myradio(TP_LORA_SPI_MOSI,TP_LORA_SPI_MISO,TP_LORA_SPI_SCK,TP_LORA_SPI_NSS,TP_LORA_RESET,PB_4,PB_1,PB_0,PC_13,NC,NC,
-//                             NC,NC,PC_2,PA_1,NC,PC_1,PA_12);
 
-LoRaWANInterface lorawan(myradio);
 
-/** Rx_buffer size
+/** Constructor for the LorawanTP class
  */
-uint8_t rx_buffer[51];
-
-LorawanTP::LorawanTP(){
+LorawanTP::LorawanTP(PinName mosi,PinName miso,PinName sclk,PinName nss,PinName reset,PinName dio0,PinName dio1,PinName dio2,
+                     PinName dio3,PinName dio4,PinName dio5,PinName rf_switch_ctl1,PinName rf_switch_ctl2,PinName txctl,
+                     PinName rxctl,PinName ant_switch,PinName pwr_amp_ctl,PinName tcxo): 
+                     _myradio(mosi,miso,sclk,nss,reset,dio0,dio1,dio2,dio3,dio4,dio5,rf_switch_ctl1,rf_switch_ctl2,txctl,
+                     rxctl,ant_switch,pwr_amp_ctl,tcxo), lorawan(_myradio) 
+{
+          
 }
-/** 
+
+/** Destructor for the LorawanTP class
  */
-LorawanTP:: ~LorawanTP(){
+LorawanTP:: ~LorawanTP()
+{
+   _myradio.~SX1276_LoRaRadio();
 }
 
 /** Join the TTN Network Server.
@@ -44,36 +40,44 @@ LorawanTP:: ~LorawanTP(){
     * @return              It could be one of these:
     *                       i)  0 sucess.
     *                      ii) A negative error code on failure. */
-int LorawanTP::join()
-{    
-   lorawan_status_t retcode;
-   retcode = lorawan.initialize(&ev_queue);
-   if (retcode!=LORAWAN_STATUS_OK){
+int LorawanTP::join(const device_class_t device_class)
+{   
+    lorawan_status_t retcode;
+    retcode = lorawan.initialize(&ev_queue);
+    if (retcode!=LORAWAN_STATUS_OK)
+    {
         return retcode; 
-        }
-    retcode=lorawan.set_device_class(CLASS_C);
-    if (retcode!=LORAWAN_STATUS_OK){
+    }
+    retcode=lorawan.set_device_class(device_class);
+    if (retcode!=LORAWAN_STATUS_OK)
+    {
         return retcode; 
-        }
-    retcode=lorawan.enable_adaptive_datarate();
-    if (retcode != LORAWAN_STATUS_OK) {
-         return retcode; 
-         }
-    //lorawan.set_datarate(0);
+    }
     cbs.events = mbed::callback(lora_event_handler);
     lorawan.add_app_callbacks(&cbs);
+  
+    retcode=lorawan.enable_adaptive_datarate();
+    if (retcode != LORAWAN_STATUS_OK) 
+    {
+        return retcode; 
+    }
+
     retcode=lorawan.connect();
-    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS)) {
-        retcode=lorawan.connect(); 
-        //return retcode; 
-            }
+    /**TODO: CHECK with OTAA and ABP return codes*/
+    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) 
+    {
+        //retcode=lorawan.connect(); 
+       // return retcode; 
+    }
     
 /** Dispatch the event,if connected it will stop
     */
     ev_queue.dispatch_forever();
     ev_queue.break_dispatch();
+
     return LORAWAN_STATUS_OK; 
 }
+
  /** Send a message from the Network Server on a specific port.
     *
     * @param port          The application port number. Port numbers 0 and 224 are reserved,
@@ -101,14 +105,15 @@ int LorawanTP::join()
     *                      LORAWAN_STATUS_PARAMETER_INVALID if NULL data pointer is given or flags are invalid
 */        
 
-int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
-   
-
-    int8_t retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
-    if (retcode < 0) {
+int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
+{
+    int8_t retcode=0;
+    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
+    if (retcode < 0) 
+    {
         ev_queue.break_dispatch();
         return retcode;
-        } 
+    } 
     ev_queue.dispatch_forever();
 
     return retcode;
@@ -136,74 +141,84 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) {
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
 
-DownlinkData LorawanTP::receive_message(){
+DownlinkData LorawanTP::receive_message(bool get_data)
+{
+    uint8_t rx_buffer[10];
     struct DownlinkData data;
     uint64_t decimalValue;
-    uint16_t testval;
-    uint8_t port;
+    uint8_t port=0;
     int flags;
-    memset(rx_buffer, 0, sizeof(rx_buffer));
-    ev_queue.dispatch_forever();
-    int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
-    if (retcode<=0){
-       ev_queue.break_dispatch();
-       return data; 
-       }
-/** Return the result from hex to decimal
-    Port 223 should only be used for setting the time.
-    */
-    if(port==221){
-        time_t time_now=time(NULL);
-        int bytes_to_buffer=retcode;
-        decimalValue=rx_buffer[bytes_to_buffer-1];
-        for (int i = 0; i < (retcode-1); i++) {
-                int shift_bytes=(8*(bytes_to_buffer-1));
-                decimalValue |=(rx_buffer[i]<<shift_bytes);
-                bytes_to_buffer--;
-            }
-        memset(rx_buffer, 0, sizeof(rx_buffer));
-        testval=decimalValue;
-        data.received_value[0]=testval;
-        a.printf("Time now: %d\r\n",data.received_value[0]);
-        data.port=port;
-        if (decimalValue>time_now){
 
-            set_time(decimalValue);
-            }
-        ev_queue.break_dispatch();
-        return data;
-      } 
-    
-    if(port==222){
-        data.port=port;
-        int bytes_to_buffer=retcode;
-        for (int i = 0; i < retcode; i++) {
-            data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
-            a.printf("Value %i:  %d\r\n",i,data.received_value[i]);
-            i++;
-            }
+    if (get_data==false)
+    {
         memset(rx_buffer, 0, sizeof(rx_buffer));
-        ev_queue.break_dispatch();
-        return data;
-      }
-      else{
-        time_t time_now=time(NULL);
-        int bytes_to_buffer=retcode;
-        decimalValue=rx_buffer[bytes_to_buffer-1];
-        for (int i = 0; i < (retcode-1); i++) {
+        ev_queue.dispatch_forever();
+        int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
+        data.port=port;
+        data.retcode=retcode;
+        if (retcode<=0)
+        {
+            ev_queue.break_dispatch();
+            return data; 
+        }
+    /** Return the result from hex to decimal
+        Port 221 should only be used for setting the time.
+        */
+        if(port==CLOCK_SYNCH_PORT)
+        {
+            time_t time_now=time(NULL);
+            int bytes_to_buffer=retcode;
+            decimalValue=rx_buffer[bytes_to_buffer-1];
+            for (int i = 0; i < (retcode-1); i++) 
+            {
                 int shift_bytes=(8*(bytes_to_buffer-1));
                 decimalValue |=(rx_buffer[i]<<shift_bytes);
                 bytes_to_buffer--;
             }
-        memset(rx_buffer, 0, sizeof(rx_buffer));
-        data.received_value[0]=decimalValue;
-        a.printf("Uplink %d\r\n",data.received_value[0]);
-        data.port=port;
+            memset(rx_buffer, 0, sizeof(rx_buffer));
+            
+            data.received_value[0]=decimalValue;
+            data.port=0;
+            if (decimalValue>time_now)
+            {
+                set_time(decimalValue+10);
+                data.port=port;
+            }
+        } 
+        
+        if(port==SCHEDULER_PORT)
+        {
+            int bytes_to_buffer=retcode;
+            for (int i = 0; i < retcode; i++)
+            {
+                data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
+                i++;
+            }
+            memset(rx_buffer, 0, sizeof(rx_buffer));
+        }
+
+        if(port==RESET_PORT)
+        {
+            NVIC_SystemReset();
+        }
+
+        else
+        {
+            data.port=port;
+            int bytes_to_buffer=retcode;
+            decimalValue=rx_buffer[bytes_to_buffer-1];
+            for (int i = 0; i < (retcode-1); i++) 
+            {
+                int shift_bytes=(8*(bytes_to_buffer-1));
+                decimalValue |=(rx_buffer[i]<<shift_bytes);
+                bytes_to_buffer--;
+            }
+            data.received_value[0]=decimalValue;
+            memset(rx_buffer, 0, sizeof(rx_buffer));
+        }
+
         ev_queue.break_dispatch();
-        return data;
-      }
-   
-    ev_queue.break_dispatch();
+   }
     return data;
 }
 
@@ -212,11 +227,13 @@ DownlinkData LorawanTP::receive_message(){
     * @return              It could be one of these:
     *                       i)LORAWAN_STATUS_OK (the statuses are reversed-simplicity reasons) on sucessfull disconnection,
     *                       ii) A negative error code (-1011) on failure to disconeect . */
-int LorawanTP::sleep(){
+int LorawanTP::sleep()
+{
     ev_queue.break_dispatch();
-    myradio.sleep();
+    _myradio.sleep();
     int retcode=lorawan.disconnect();
-    if (retcode==LORAWAN_STATUS_DEVICE_OFF){
+    if (retcode==LORAWAN_STATUS_DEVICE_OFF)
+    {
         return LORAWAN_STATUS_OK;   
     }
     return LORAWAN_STATUS_DEVICE_OFF;
@@ -246,7 +263,8 @@ int LorawanTP::sleep(){
 
 void LorawanTP::lora_event_handler(lorawan_event_t event)
 {
-    switch (event) {
+    switch (event) 
+    {
         case CONNECTED:
             ev_queue.break_dispatch();
             break;
