@@ -1,6 +1,6 @@
 /**
   * @file    LorawanTP.h
-  * @version 0.2.0
+  * @version 0.3.0
   * @author  Rafaella Nofytou
   * @brief   Header file of the SX1276 driver module. 
   * Handles communication with the thingpilot nodes utilising the SX1276 (or compatible) modem
@@ -12,7 +12,6 @@
 
 /** Includes 
  */
- 
 #include "mbed.h"
 #include <cstdio>
 #include "lorawan/LoRaRadio.h"
@@ -27,20 +26,11 @@
 #define SCHEDULER_PORT 222
 #define RESET_PORT  223
 
-/** Struct used to store parameters that enable the storage,
-     *  modification and deletion of entries
-     */
-struct DownlinkData
-{
-    uint16_t received_value[MAX_BUFFER_READING_TIMES];
-    uint8_t port;
-    int8_t retcode;  
-} ;
-  
+
 /** Base class for the ThingPilot LorawanTP interface
  */ 
-class LorawanTP {
-
+class LorawanTP 
+{
     public: 
 /** Constructor for the LorawanTP class
  */
@@ -109,7 +99,7 @@ class LorawanTP {
     *                       i)   0 if there is nothing else to read.
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
-    DownlinkData receive_message(bool get_data);
+    int receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* rx_retcode);
 
     /** Put the RF module in sleep mode & lorawan disconnect the current session..
     *
@@ -142,10 +132,8 @@ class LorawanTP {
     *  events may finish executing, but no new events will be executed. */
     static void lora_event_handler(lorawan_event_t event);
 
-   //#if defined (_COMMS_LORAWAN_DRIVER) && (_COMMS_LORAWAN_DRIVER == SARAN2)
 	SX1276_LoRaRadio _myradio;
     LoRaWANInterface lorawan;
-   //#endif
     
 };
 

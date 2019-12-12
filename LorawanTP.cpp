@@ -1,6 +1,6 @@
 /**
   * @file    LorawanTP.cpp
-  * @version 0.2.0
+  * @version 0.3.0
   * @author  Rafaella Neofytou
   * @brief   C++ file of the SX1276 driver module. 
   * Handles communication with the thingpilot nodes utilising the SX1276 (or compatible) modem
@@ -15,7 +15,6 @@
 static EventQueue ev_queue(20 *EVENTS_EVENT_SIZE);
 
 lorawan_app_callbacks_t cbs;
-
 
 /** Constructor for the LorawanTP class
  */
@@ -61,14 +60,14 @@ int LorawanTP::join(const device_class_t device_class)
     {
         return retcode; 
     }
-
-    retcode=lorawan.connect();
+    retcode=lorawan.connect(); 
     /**TODO: CHECK with OTAA and ABP return codes*/
     if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) 
     {
         //retcode=lorawan.connect(); 
        // return retcode; 
     }
+   
     
 /** Dispatch the event,if connected it will stop
     */
@@ -80,15 +79,14 @@ int LorawanTP::join(const device_class_t device_class)
 
  /** Send a message from the Network Server on a specific port.
     *
-    * @param port          The application port number. Port numbers 0 and 224 are reserved,
-    *                      whereas port numbers from 1 to 223 (0x01 to 0xDF) are valid port numbers.
-    *                      Anything out of this range is illegal.
+    * @param port          The application port number. Port numbers 0 and 220-224 are reserved,
+    *                      whereas port numbers from 1 to 219 are valid port numbers.
     *
     * @param payload       A buffer with data from the user or stored in eeproom.
     *
     * @param length        The size of data in bytes.
-    * @param flags         A flag is used to determine what type of message is being sent, for example:
     *
+    *                      A flag is used to determine what type of message is being sent, for example:
     *                      MSG_UNCONFIRMED_FLAG = 0x01
     *                      MSG_CONFIRMED_FLAG   = 0x02
     *                      MSG_MULTICAST_FLAG   = 0x04
@@ -107,29 +105,31 @@ int LorawanTP::join(const device_class_t device_class)
 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
 {
-    int8_t retcode=0;
-    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); 
+    loramac_protocol_params _params;
+    _params.ul_frame_counter =  65535;
+    int retcode=0;
+    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG);
+
     if (retcode < LORAWAN_STATUS_OK) 
     {
         ev_queue.break_dispatch();
         return retcode;
     } 
     ev_queue.dispatch_forever();
-
     return retcode;
 }
 
 /** Receives a message from the Network Server on a specific port.
     *
-    * @param port          The application port number. Port numbers 0 and 224 are reserved,
+    * @param rx_port       The application port number. Port numbers 0 and 224 are reserved,
     *                      whereas port numbers from 1 to 223 (0x01 to 0xDF) are valid port numbers.
     *                      Anything out of this range is illegal.
     *
-    * @param data          A pointer to buffer where the received data will be stored.
+    * @param rx_dec_buffer A pointer to buffer where the received data will be stored.
     *
-    * @param length        The size of data in bytes.
+    * @param rx_retcode    The size of data in bytes. If negative is a status code.
     *
-    * @param flags         A flag is used to determine what type of message is being received, for example:
+    *                      A flag is used to determine what type of message is being received, for example:
     *
     *                      MSG_UNCONFIRMED_FLAG = 0x01
     *                      MSG_CONFIRMED_FLAG   = 0x02
@@ -141,85 +141,57 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
 
-DownlinkData LorawanTP::receive_message(bool get_data)
+int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* rx_retcode)  
 {
-    uint8_t rx_buffer[10];
-    struct DownlinkData data;
-    uint64_t decimalValue;
+    uint8_t rx_buffer[30];
+    uint32_t decimalValue=0;
     uint8_t port=0;
+    int retcode = 0;
     int flags;
-
-    if (get_data==false)
+    memset(rx_buffer, 0, sizeof(rx_buffer));
+    ev_queue.dispatch_forever();
+    retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
+    
+    if (retcode<=LORAWAN_STATUS_OK)
     {
-        memset(rx_buffer, 0, sizeof(rx_buffer));
-        ev_queue.dispatch_forever();
-        int8_t retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
-        data.port=port;
-        data.retcode=retcode;
-        if (retcode<=LORAWAN_STATUS_OK)
-        {
-            ev_queue.break_dispatch();
-            return data; 
-        }
-    /** Return the result from hex to decimal
-        Port 221 should only be used for setting the time.
-        */
-        if(port==CLOCK_SYNCH_PORT)
-        {
-            time_t time_now=time(NULL);
-            int bytes_to_buffer=retcode;
-            decimalValue=rx_buffer[bytes_to_buffer-1];
-            for (int i = 0; i < (retcode-1); i++) 
-            {
-                int shift_bytes=(8*(bytes_to_buffer-1));
-                decimalValue |=(rx_buffer[i]<<shift_bytes);
-                bytes_to_buffer--;
-            }
-            memset(rx_buffer, 0, sizeof(rx_buffer));
-            
-            data.received_value[0]=decimalValue;
-            data.port=0;
-            if (decimalValue>time_now)
-            {
-                set_time(decimalValue+10);
-                data.port=port;
-            }
-        } 
-        
-        if(port==SCHEDULER_PORT)
-        {
-            int bytes_to_buffer=retcode;
-            for (int i = 0; i < retcode; i++)
-            {
-                data.received_value[i/2]= rx_buffer[i+1]+(rx_buffer[i]<<8);
-                i++;
-            }
-            memset(rx_buffer, 0, sizeof(rx_buffer));
-        }
-
-        if(port==RESET_PORT)
-        {
-            NVIC_SystemReset();
-        }
-
-        else
-        {
-            data.port=port;
-            int bytes_to_buffer=retcode;
-            decimalValue=rx_buffer[bytes_to_buffer-1];
-            for (int i = 0; i < (retcode-1); i++) 
-            {
-                int shift_bytes=(8*(bytes_to_buffer-1));
-                decimalValue |=(rx_buffer[i]<<shift_bytes);
-                bytes_to_buffer--;
-            }
-            data.received_value[0]=decimalValue;
-            memset(rx_buffer, 0, sizeof(rx_buffer));
-        }
-
         ev_queue.break_dispatch();
-   }
-    return data;
+        return retcode; 
+    }
+
+    if(port==SCHEDULER_PORT)
+    {
+        int bytes_to_buffer=retcode;
+        for (int i = 0; i < retcode; i++)
+        {
+            rx_dec_buffer[i/2]=rx_buffer[i+1]+(rx_buffer[i]<<8);
+            i++;
+        }
+        memset(rx_buffer, 0, sizeof(rx_buffer));
+    }
+    
+    if(port==RESET_PORT)
+    {
+        NVIC_SystemReset();
+    }
+
+    else
+    {
+        int bytes_to_buffer=retcode;
+        decimalValue=rx_buffer[bytes_to_buffer-1];
+        for (int i = 0; i < (retcode-1); i++) 
+        {
+            int shift_bytes=(8*(bytes_to_buffer-1));
+            decimalValue |=(rx_buffer[i]<<shift_bytes);
+            bytes_to_buffer--;
+        }
+        rx_dec_buffer[0]=decimalValue;
+        memset(rx_buffer, 0, sizeof(rx_buffer));
+    }
+    ev_queue.break_dispatch();
+    *rx_port = port;
+    *rx_retcode = retcode;
+
+    return retcode;
 }
 
 /** Put the RF module in sleep mode & lorawan disconnect the current session..
@@ -266,42 +238,19 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
     switch (event) 
     {
         case CONNECTED:
-            ev_queue.break_dispatch();
-            break;
         case DISCONNECTED:
-            ev_queue.break_dispatch();
-            break;
         case TX_DONE:
-            ev_queue.break_dispatch();
-            break;
         case TX_TIMEOUT:
-            ev_queue.break_dispatch();
-            break;
         case TX_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case TX_CRYPTO_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case TX_SCHEDULING_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case RX_DONE:
-            ev_queue.break_dispatch();
-            break;
         case RX_TIMEOUT:
-            ev_queue.break_dispatch();
-            break;
         case RX_ERROR:
-            ev_queue.break_dispatch();
-            break;
         case JOIN_FAILURE:
-            ev_queue.break_dispatch();
-            break;
         case UPLINK_REQUIRED:
         case AUTOMATIC_UPLINK_ERROR:
             ev_queue.break_dispatch();
-        
             break;
         default:
             MBED_ASSERT("Unknown Event");
