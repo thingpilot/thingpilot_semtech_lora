@@ -19,7 +19,7 @@
 #include "lorawan/LoRaWANInterface.h"
 #include "lorawan/system/lorawan_data_structures.h"
 #include "events/EventQueue.h"
-
+#include "credentials.h"
 
 #define CLOCK_SYNCH_ACK_PORT   220
 #define CLOCK_SYNCH_PORT 221
