@@ -12,8 +12,20 @@
 
 /** EventQueue for dispatching events
  */
-static EventQueue ev_queue(20 *EVENTS_EVENT_SIZE);
+static EventQueue ev_queue(20*EVENTS_EVENT_SIZE);
 
+#if(OVER_THE_AIR_ACTIVATION)
+static uint8_t DEVICE_EUI[8] = { DEV_EUI };
+static uint8_t APPLICATION_EUI[8] = { APP_EUI };
+static uint8_t APPLICATION_KEY[16] = { APP_KEY };
+#endif
+
+#if(!OVER_THE_AIR_ACTIVATION)
+static uint8_t net_id = 0x13;
+static uint32_t devAddr = DEV_ADD;
+static uint8_t nwkSKey[] = { NWKS_KEY };
+static uint8_t appSKey[] = { APPS_KEY };
+#endif
 lorawan_app_callbacks_t cbs;
 
 /** Constructor for the LorawanTP class
@@ -42,33 +54,50 @@ LorawanTP:: ~LorawanTP()
 int LorawanTP::join(const device_class_t device_class)
 {   
     lorawan_status_t retcode;
-    retcode = lorawan.initialize(&ev_queue);
+    retcode=lorawan.initialize(&ev_queue);
     if (retcode!=LORAWAN_STATUS_OK)
     {
         return retcode; 
     }
+
     retcode=lorawan.set_device_class(device_class);
-    if (retcode!=LORAWAN_STATUS_OK)
+    if (retcode != LORAWAN_STATUS_OK) 
     {
         return retcode; 
     }
     cbs.events = mbed::callback(lora_event_handler);
     lorawan.add_app_callbacks(&cbs);
-  
+
+    //lorawan.set_datarate(0);
     retcode=lorawan.enable_adaptive_datarate();
     if (retcode != LORAWAN_STATUS_OK) 
     {
         return retcode; 
     }
-    retcode=lorawan.connect(); 
+
+    lorawan_connect_t connect_params;
+    #if(OVER_THE_AIR_ACTIVATION)
+        connect_params.connect_type = LORAWAN_CONNECTION_OTAA;
+        connect_params.connection_u.otaa.dev_eui = DEVICE_EUI;
+        connect_params.connection_u.otaa.app_eui = APPLICATION_EUI;
+        connect_params.connection_u.otaa.app_key = APPLICATION_KEY;
+    #endif
+    #if(!OVER_THE_AIR_ACTIVATION)
+        connect_params.connect_type = LORAWAN_CONNECTION_ABP;
+        connect_params.connection_u.abp.nwk_id = net_id;
+        connect_params.connection_u.abp.dev_addr = devAddr;
+        connect_params.connection_u.abp.nwk_skey = nwkSKey;
+        connect_params.connection_u.abp.app_skey = appSKey;
+        
+    #endif
+    retcode = lorawan.connect(connect_params);
+   
     /**TODO: CHECK with OTAA and ABP return codes*/
-    if  ((retcode != LORAWAN_STATUS_OK) || (retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS ||retcode!=LORAWAN_STATUS_ALREADY_CONNECTED)) 
+    if (retcode != LORAWAN_STATUS_OK || retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS || retcode!=LORAWAN_STATUS_ALREADY_CONNECTED) 
     {
-        //retcode=lorawan.connect(); 
-       // return retcode; 
+    //TODO: 
     }
    
-    
 /** Dispatch the event,if connected it will stop
     */
     ev_queue.dispatch_forever();
@@ -105,13 +134,12 @@ int LorawanTP::join(const device_class_t device_class)
 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
 {
-    loramac_protocol_params _params;
-    _params.ul_frame_counter =  65535;
     int retcode=0;
-    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG);
 
+    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); //MSG_CONFIRMED_FLAG 
     if (retcode < LORAWAN_STATUS_OK) 
     {
+        debug("Error retcode %d ",retcode);
         ev_queue.break_dispatch();
         return retcode;
     } 
@@ -143,19 +171,23 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
 
 int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* rx_retcode)  
 {
-    uint8_t rx_buffer[30];
+    uint8_t rx_buffer[100]= { 0 };
     uint32_t decimalValue=0;
     uint8_t port=0;
     int retcode = 0;
     int flags;
-    memset(rx_buffer, 0, sizeof(rx_buffer));
+
     ev_queue.dispatch_forever();
+    
+    memset(rx_buffer, 0, sizeof(rx_buffer));
+    debug("Receiving...");
     retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
+    debug("Received...\r\n");
     
     if (retcode<=LORAWAN_STATUS_OK)
     {
-        ev_queue.break_dispatch();
-        return retcode; 
+       ev_queue.break_dispatch();
+       return retcode; 
     }
 
     if(port==SCHEDULER_PORT)
@@ -187,10 +219,10 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* r
         rx_dec_buffer[0]=decimalValue;
         memset(rx_buffer, 0, sizeof(rx_buffer));
     }
+   
     ev_queue.break_dispatch();
     *rx_port = port;
     *rx_retcode = retcode;
-
     return retcode;
 }
 
@@ -238,18 +270,51 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
     switch (event) 
     {
         case CONNECTED:
+            debug("Connected\r\n");
+            ev_queue.break_dispatch();
+            break;
         case DISCONNECTED:
+            debug("DISCONNECTED\r\n");
+            ev_queue.break_dispatch();
+            break;
         case TX_DONE:
+            debug("Sent Succesfully\r\n");
+            ev_queue.break_dispatch();
+            break;
         case TX_TIMEOUT:
+            debug("TX_TIMEOUT\r\n");
+            ev_queue.break_dispatch();
+            break;
         case TX_ERROR:
+            debug("TX_ERROR\r\n");
+            ev_queue.break_dispatch();
+            break;
         case TX_CRYPTO_ERROR:
+            debug("TX_CRYPTO_ERROR\r\n");
+            ev_queue.break_dispatch();
+            break;
         case TX_SCHEDULING_ERROR:
+            debug("TX_SCHEDULING_ERROR\r\n");
+            ev_queue.break_dispatch();
+            break;
         case RX_DONE:
+            debug("RX_DONE\r\n");
+            ev_queue.break_dispatch();
+            break;
         case RX_TIMEOUT:
+            debug("RX_TIMEOUT\r\n");
         case RX_ERROR:
+            debug("ERROR\r\n");
         case JOIN_FAILURE:
+            debug("JOIN_FAILURE\r\n");
+            ev_queue.break_dispatch();
+            break;
         case UPLINK_REQUIRED:
+            debug("UPLINK_REQUIRED\r\n");
+            ev_queue.break_dispatch();
+            break;
         case AUTOMATIC_UPLINK_ERROR:
+            debug("AUTOMATIC_UPLINK_ERROR\r\n");
             ev_queue.break_dispatch();
             break;
         default:
