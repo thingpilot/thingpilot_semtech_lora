@@ -99,7 +99,10 @@ class LorawanTP
     *                       i)   0 if there is nothing else to read.
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
-    int receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* rx_retcode);
+    int receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& rx_retcode);
+
+
+    int get_unix_time(uint32_t& unix_time);
 
     /** Put the RF module in sleep mode & lorawan disconnect the current session..
     *

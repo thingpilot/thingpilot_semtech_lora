@@ -59,7 +59,7 @@ int LorawanTP::join(const device_class_t device_class)
     {
         return retcode; 
     }
-
+    
     retcode=lorawan.set_device_class(device_class);
     if (retcode != LORAWAN_STATUS_OK) 
     {
@@ -75,6 +75,7 @@ int LorawanTP::join(const device_class_t device_class)
         return retcode; 
     }
 
+    lorawan.remove_link_check_request();
     lorawan_connect_t connect_params;
     #if(OVER_THE_AIR_ACTIVATION)
         connect_params.connect_type = LORAWAN_CONNECTION_OTAA;
@@ -106,43 +107,25 @@ int LorawanTP::join(const device_class_t device_class)
     return LORAWAN_STATUS_OK; 
 }
 
- /** Send a message from the Network Server on a specific port.
-    *
-    * @param port          The application port number. Port numbers 0 and 220-224 are reserved,
-    *                      whereas port numbers from 1 to 219 are valid port numbers.
-    *
-    * @param payload       A buffer with data from the user or stored in eeproom.
-    *
-    * @param length        The size of data in bytes.
-    *
-    *                      A flag is used to determine what type of message is being sent, for example:
-    *                      MSG_UNCONFIRMED_FLAG = 0x01
-    *                      MSG_CONFIRMED_FLAG   = 0x02
-    *                      MSG_MULTICAST_FLAG   = 0x04
-    *                      MSG_PROPRIETARY_FLAG = 0x08
-    *
-    *
-    * @return              It could be one of these:
-    *                       i)  Number of bytes send on sucess.
-    *                       ii) A negative error code on failure
-    *                      LORAWAN_STATUS_NOT_INITIALIZED   if system is not initialized with initialize(),
-    *                      LORAWAN_STATUS_NO_ACTIVE_SESSIONS if connection is not open,
-    *                      LORAWAN_STATUS_WOULD_BLOCK       if another TX is ongoing,
-    *                      LORAWAN_STATUS_PORT_INVALID      if trying to send to an invalid port (e.g. to 0)
-    *                      LORAWAN_STATUS_PARAMETER_INVALID if NULL data pointer is given or flags are invalid
-*/        
-
+ 
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
-{
+{   
+    lorawan_tx_metadata txMetadata;
     int retcode=0;
-
     retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); //MSG_CONFIRMED_FLAG 
     if (retcode < LORAWAN_STATUS_OK) 
     {
         debug("Error retcode %d ",retcode);
         ev_queue.break_dispatch();
         return retcode;
-    } 
+    }
+    if (retcode >= LORAWAN_STATUS_OK) 
+    {
+        lorawan.get_tx_metadata(txMetadata);
+        // debug("\nTX %d byte tx_power %d nb_retries %d", (int) retcode,
+        //        (int) txMetadata.tx_power,
+        //        (int) txMetadata.nb_retries); 
+    }
     ev_queue.dispatch_forever();
     return retcode;
 }
@@ -169,25 +152,25 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
     *                       ii)  Number (decimal value) of bytes written to user buffer.
     *                       iii) A negative error code on failure. */
 
-int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* rx_retcode)  
+int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& rx_retcode)  
 {
+    lorawan_rx_metadata rxMetadata;
     uint8_t rx_buffer[100]= { 0 };
     uint32_t decimalValue=0;
     uint8_t port=0;
     int retcode = 0;
     int flags;
 
-    ev_queue.dispatch_forever();
-    
+    ev_queue.dispatch(10000);
     memset(rx_buffer, 0, sizeof(rx_buffer));
-    debug("Receiving...");
     retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
-    debug("Received...\r\n");
-    
-    if (retcode<=LORAWAN_STATUS_OK)
+
+    if(retcode>=LORAWAN_STATUS_OK)
     {
-       ev_queue.break_dispatch();
-       return retcode; 
+        lorawan.get_rx_metadata(rxMetadata);
+        // debug("RX %d byte RSSI %d SNR %d\n", (int) retcode,
+        //        (int) rxMetadata.rssi,
+        //        (int) rxMetadata.snr);
     }
 
     if(port==SCHEDULER_PORT)
@@ -219,12 +202,50 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t* rx_port, int* r
         rx_dec_buffer[0]=decimalValue;
         memset(rx_buffer, 0, sizeof(rx_buffer));
     }
-   
-    ev_queue.break_dispatch();
-    *rx_port = port;
-    *rx_retcode = retcode;
+    
+    ev_queue.dispatch(10000);
+    rx_port = port;
+    rx_retcode = retcode;
     return retcode;
 }
+
+ int LorawanTP::get_unix_time(uint32_t& unix_time)
+ {
+    unix_time=0;
+    int retcode=join(CLASS_A);
+    if(retcode<0)
+    {
+        return retcode;
+    }
+    uint8_t dummy[1]={1};
+    retcode=send_message(223, dummy, 1);
+    if(retcode<=0)
+    {
+         return retcode;
+    }
+    uint8_t port=0;
+    uint32_t rx_dec_buffer[1];
+    receive_message(rx_dec_buffer,port,retcode);
+    port=0;
+    ThisThread::sleep_for(1000);
+
+    for( int i=0; ((port!=CLOCK_SYNCH_PORT) && (i<MAX_RETRY_CLOCK_SYNCH)); i++) 
+    {
+        debug("\n%i. Waiting for a server message dude\n",i);
+        ThisThread::sleep_for(5000);
+        retcode=send_message(223, dummy,1);
+        if(retcode<0)
+        {
+            return retcode;
+        }
+        retcode=receive_message(rx_dec_buffer,port,retcode);
+        if(port == CLOCK_SYNCH_PORT && retcode>0)
+        {
+            unix_time=rx_dec_buffer[0];
+        }
+    }
+    return retcode;
+ }
 
 /** Put the RF module in sleep mode & lorawan disconnect the current session..
     *
@@ -270,51 +291,29 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
     switch (event) 
     {
         case CONNECTED:
-            debug("Connected\r\n");
+            debug("\nLorawan connection established");
             ev_queue.break_dispatch();
             break;
         case DISCONNECTED:
-            debug("DISCONNECTED\r\n");
             ev_queue.break_dispatch();
             break;
         case TX_DONE:
-            debug("Sent Succesfully\r\n");
-            ev_queue.break_dispatch();
-            break;
-        case TX_TIMEOUT:
-            debug("TX_TIMEOUT\r\n");
-            ev_queue.break_dispatch();
-            break;
-        case TX_ERROR:
-            debug("TX_ERROR\r\n");
-            ev_queue.break_dispatch();
-            break;
-        case TX_CRYPTO_ERROR:
-            debug("TX_CRYPTO_ERROR\r\n");
-            ev_queue.break_dispatch();
-            break;
-        case TX_SCHEDULING_ERROR:
-            debug("TX_SCHEDULING_ERROR\r\n");
+            debug("\nSuccesfully sended, tx done!");
             ev_queue.break_dispatch();
             break;
         case RX_DONE:
-            debug("RX_DONE\r\n");
+            debug("\nSuccesfully received, rx done!\n");
             ev_queue.break_dispatch();
             break;
+        case TX_TIMEOUT:
+        case TX_ERROR:
+        case TX_CRYPTO_ERROR:
+        case TX_SCHEDULING_ERROR:
         case RX_TIMEOUT:
-            debug("RX_TIMEOUT\r\n");
         case RX_ERROR:
-            debug("ERROR\r\n");
         case JOIN_FAILURE:
-            debug("JOIN_FAILURE\r\n");
-            ev_queue.break_dispatch();
-            break;
         case UPLINK_REQUIRED:
-            debug("UPLINK_REQUIRED\r\n");
-            ev_queue.break_dispatch();
-            break;
         case AUTOMATIC_UPLINK_ERROR:
-            debug("AUTOMATIC_UPLINK_ERROR\r\n");
             ev_queue.break_dispatch();
             break;
         default:
