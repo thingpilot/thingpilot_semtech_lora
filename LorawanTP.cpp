@@ -5,7 +5,7 @@
   * @brief   C++ file of the SX1276 driver module. 
   * Handles communication with the thingpilot nodes utilising the SX1276 (or compatible) modem
   */
-
+#if BOARD == EARHART_V1_0_0 || BOARD == DEVELOPMENT_BOARD_V1_1_0 /* #endif at EoF */
 /** Includes
  */
 #include "LorawanTP.h"
@@ -14,18 +14,8 @@
  */
 static EventQueue ev_queue(20*EVENTS_EVENT_SIZE);
 
-#if(OVER_THE_AIR_ACTIVATION)
-static uint8_t DEVICE_EUI[8] = { DEV_EUI };
-static uint8_t APPLICATION_EUI[8] = { APP_EUI };
-static uint8_t APPLICATION_KEY[16] = { APP_KEY };
-#endif
-
-#if(!OVER_THE_AIR_ACTIVATION)
 static uint8_t net_id = 0x13;
-static uint32_t devAddr = DEV_ADD;
-static uint8_t nwkSKey[] = { NWKS_KEY };
-static uint8_t appSKey[] = { APPS_KEY };
-#endif
+
 lorawan_app_callbacks_t cbs;
 
 /** Constructor for the LorawanTP class
@@ -79,24 +69,32 @@ int LorawanTP::join(const device_class_t device_class)
     lorawan_connect_t connect_params;
     #if(OVER_THE_AIR_ACTIVATION)
         connect_params.connect_type = LORAWAN_CONNECTION_OTAA;
-        connect_params.connection_u.otaa.dev_eui = DEVICE_EUI;
-        connect_params.connection_u.otaa.app_eui = APPLICATION_EUI;
-        connect_params.connection_u.otaa.app_key = APPLICATION_KEY;
+        connect_params.connection_u.otaa.dev_eui = DevEUI;
+        connect_params.connection_u.otaa.app_eui = AppEUI;
+        connect_params.connection_u.otaa.app_key = AppKey;
+        connect_params.connection_u.otaa.nb_trials = MBED_CONF_LORA_NB_TRIALS;
     #endif
     #if(!OVER_THE_AIR_ACTIVATION)
         connect_params.connect_type = LORAWAN_CONNECTION_ABP;
         connect_params.connection_u.abp.nwk_id = net_id;
-        connect_params.connection_u.abp.dev_addr = devAddr;
-        connect_params.connection_u.abp.nwk_skey = nwkSKey;
-        connect_params.connection_u.abp.app_skey = appSKey;
+        connect_params.connection_u.abp.dev_addr = DevAddr;
+        connect_params.connection_u.abp.nwk_skey = NetSKey;
+        connect_params.connection_u.abp.app_skey = AppSKey;
         
     #endif
-    retcode = lorawan.connect(connect_params);
+    retcode=lorawan.connect(connect_params);
    
     /**TODO: CHECK with OTAA and ABP return codes*/
-    if (retcode != LORAWAN_STATUS_OK || retcode !=LORAWAN_STATUS_CONNECT_IN_PROGRESS || retcode!=LORAWAN_STATUS_ALREADY_CONNECTED) 
+    while ( retcode != LORAWAN_STATUS_OK) 
     {
-    //TODO: 
+        debug("\r\nNot connected, retcode %d\r\n",retcode);
+        retcode = lorawan.connect(connect_params);
+        ev_queue.dispatch(20000);
+        if (  retcode == LORAWAN_STATUS_CONNECT_IN_PROGRESS || retcode == LORAWAN_STATUS_ALREADY_CONNECTED
+            || retcode == LORAWAN_STATUS_OK )
+        {
+           break;
+        }
     }
    
 /** Dispatch the event,if connected it will stop
@@ -110,21 +108,34 @@ int LorawanTP::join(const device_class_t device_class)
  
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
 {   
-    lorawan_tx_metadata txMetadata;
     int retcode=0;
+    if (port == 223)
+    {
+        retcode=join(CLASS_A);
+        if(retcode < 0)
+        {
+            return retcode;
+        }
+    }
+    else
+    {
+        #if(OVER_THE_AIR_ACTIVATION)
+        retcode=join(CLASS_C);
+        #endif
+        #if(!OVER_THE_AIR_ACTIVATION)
+        retcode=join(CLASS_C);
+        #endif
+        if(retcode < 0)
+        {
+            return retcode;
+        }
+    }
     retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); //MSG_CONFIRMED_FLAG 
     if (retcode < LORAWAN_STATUS_OK) 
     {
         debug("Error retcode %d ",retcode);
         ev_queue.break_dispatch();
         return retcode;
-    }
-    if (retcode >= LORAWAN_STATUS_OK) 
-    {
-        lorawan.get_tx_metadata(txMetadata);
-        // debug("\nTX %d byte tx_power %d nb_retries %d", (int) retcode,
-        //        (int) txMetadata.tx_power,
-        //        (int) txMetadata.nb_retries); 
     }
     ev_queue.dispatch_forever();
     return retcode;
@@ -154,8 +165,7 @@ int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length)
 
 int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& rx_retcode)  
 {
-    lorawan_rx_metadata rxMetadata;
-    uint8_t rx_buffer[100]= { 0 };
+    uint8_t rx_buffer[TP_RX_BUFFER]= { 0 };
     uint32_t decimalValue=0;
     uint8_t port=0;
     int retcode = 0;
@@ -164,14 +174,6 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
     ev_queue.dispatch(10000);
     memset(rx_buffer, 0, sizeof(rx_buffer));
     retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
-
-    if(retcode>=LORAWAN_STATUS_OK)
-    {
-        lorawan.get_rx_metadata(rxMetadata);
-        // debug("RX %d byte RSSI %d SNR %d\n", (int) retcode,
-        //        (int) rxMetadata.rssi,
-        //        (int) rxMetadata.snr);
-    }
 
     if(port==SCHEDULER_PORT)
     {
@@ -212,11 +214,7 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
  int LorawanTP::get_unix_time(uint32_t& unix_time)
  {
     unix_time=0;
-    int retcode=join(CLASS_A);
-    if(retcode<0)
-    {
-        return retcode;
-    }
+    int retcode=0;
     uint8_t dummy[1]={1};
     retcode=send_message(223, dummy, 1);
     if(retcode<=0)
@@ -314,6 +312,7 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
         case JOIN_FAILURE:
         case UPLINK_REQUIRED:
         case AUTOMATIC_UPLINK_ERROR:
+             debug("\nFailure\n");
             ev_queue.break_dispatch();
             break;
         default:
@@ -322,6 +321,6 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
 }
 
 
-
+#endif
    
 
