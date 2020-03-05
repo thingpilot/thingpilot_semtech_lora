@@ -13,11 +13,9 @@
 /** Includes 
  */
 #include "mbed.h"
-#include <cstdio>
 #include "lorawan/LoRaRadio.h"
 #include "SX1276_LoRaRadio.h"
 #include "lorawan/LoRaWANInterface.h"
-#include "lorawan/system/lorawan_data_structures.h"
 #include "events/EventQueue.h"
 #include "credentials.h"
 
@@ -32,6 +30,7 @@
 class LorawanTP 
 {
     public: 
+
 /** Constructor for the LorawanTP class
  */
     LorawanTP(PinName mosi,PinName miso,PinName sclk,PinName nss,PinName reset,PinName dio0,PinName dio1,PinName dio2,
