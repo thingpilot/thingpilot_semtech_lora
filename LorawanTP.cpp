@@ -33,7 +33,7 @@ LorawanTP::LorawanTP(PinName mosi,PinName miso,PinName sclk,PinName nss,PinName 
  */
 LorawanTP:: ~LorawanTP()
 {
-   _myradio.~SX1276_LoRaRadio();
+   //_myradio.~SX1276_LoRaRadio();
 }
 
 /** Join the TTN Network Server.
@@ -47,12 +47,14 @@ int LorawanTP::join(const device_class_t device_class)
     retcode=lorawan.initialize(&ev_queue);
     if (retcode!=LORAWAN_STATUS_OK)
     {
+        debug("\nRetcode %d Line %d\n", retcode, __LINE__);
         return retcode; 
     }
     
     retcode=lorawan.set_device_class(device_class);
     if (retcode != LORAWAN_STATUS_OK) 
     {
+        debug("\nRetcode %d Line %d\n", retcode, __LINE__);
         return retcode; 
     }
     cbs.events = mbed::callback(lora_event_handler);
@@ -62,6 +64,7 @@ int LorawanTP::join(const device_class_t device_class)
     retcode=lorawan.enable_adaptive_datarate();
     if (retcode != LORAWAN_STATUS_OK) 
     {
+        debug("\nRetcode %d Line %d\n", retcode, __LINE__);
         return retcode; 
     }
 
@@ -83,61 +86,51 @@ int LorawanTP::join(const device_class_t device_class)
         
     #endif
     retcode=lorawan.connect(connect_params);
-   
+
+    int x=0;
     /**TODO: CHECK with OTAA and ABP return codes*/
-    while ( retcode != LORAWAN_STATUS_OK) 
+    while ( retcode != LORAWAN_STATUS_OK && x>3) 
     {
         debug("\r\nNot connected, retcode %d\r\n",retcode);
-        retcode = lorawan.connect(connect_params);
-        ev_queue.dispatch(20000);
         if (  retcode == LORAWAN_STATUS_CONNECT_IN_PROGRESS || retcode == LORAWAN_STATUS_ALREADY_CONNECTED
             || retcode == LORAWAN_STATUS_OK )
         {
-           break;
+            break;
         }
+        retcode = lorawan.connect(connect_params);
+        ev_queue.dispatch(5000);
+        x++;
     }
-   
-/** Dispatch the event,if connected it will stop
-    */
-    ev_queue.dispatch_forever();
-    ev_queue.break_dispatch();
-
+    if (retcode == LORAWAN_STATUS_ALREADY_CONNECTED)
+    {
+        /**Stop*/
+        ev_queue.break_dispatch();
+    }
+    else
+    {
+        ev_queue.dispatch_forever();
+        ev_queue.break_dispatch();
+    }
     return LORAWAN_STATUS_OK; 
 }
 
  
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
 {   
-    int retcode=0;
-    if (port == 223)
-    {
-        retcode=join(CLASS_A);
-        if(retcode < 0)
-        {
-            return retcode;
-        }
-    }
-    else
-    {
-        #if(OVER_THE_AIR_ACTIVATION)
-        retcode=join(CLASS_C);
-        #endif
-        #if(!OVER_THE_AIR_ACTIVATION)
-        retcode=join(CLASS_C);
-        #endif
-        if(retcode < 0)
-        {
-            return retcode;
-        }
-    }
-    retcode=lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); //MSG_CONFIRMED_FLAG 
+    int retcode = 0;
+    // retcode = join(CLASS_C);
+    // if(retcode < 0)
+    // {
+    //    // return retcode;
+    // }
+    retcode = lorawan.send(port, payload, length, MSG_UNCONFIRMED_FLAG); //MSG_CONFIRMED_FLAG 
     if (retcode < LORAWAN_STATUS_OK) 
     {
-        debug("Error retcode %d ",retcode);
+        debug("\nRetcode %d Line %d\n", retcode, __LINE__);
         ev_queue.break_dispatch();
         return retcode;
     }
-    ev_queue.dispatch_forever();
+    ev_queue.dispatch(5000);
     return retcode;
 }
 
@@ -171,7 +164,7 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
     int retcode = 0;
     int flags;
 
-    ev_queue.dispatch(10000);
+    //ev_queue.dispatch(5000);
     memset(rx_buffer, 0, sizeof(rx_buffer));
     retcode = lorawan.receive(rx_buffer, sizeof(rx_buffer), port, flags);
 
@@ -188,7 +181,8 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
     
     if(port==RESET_PORT)
     {
-        NVIC_SystemReset();
+
+       // NVIC_SystemReset(); //todo
     }
 
     else
@@ -205,7 +199,7 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
         memset(rx_buffer, 0, sizeof(rx_buffer));
     }
     
-    ev_queue.dispatch(10000);
+    ev_queue.dispatch(5000);
     rx_port = port;
     rx_retcode = retcode;
     return retcode;
@@ -215,9 +209,10 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
  {
     unix_time=0;
     int retcode=0;
+    retcode=join(CLASS_C);
     uint8_t dummy[1]={1};
     retcode=send_message(223, dummy, 1);
-    if(retcode<=0)
+    if(retcode <= 0)
     {
          return retcode;
     }
@@ -227,22 +222,19 @@ int LorawanTP::receive_message(uint32_t* rx_dec_buffer, uint8_t& rx_port, int& r
     port=0;
     ThisThread::sleep_for(1000);
 
-    for( int i=0; ((port!=CLOCK_SYNCH_PORT) && (i<MAX_RETRY_CLOCK_SYNCH)); i++) 
+    for( int i=0; ((port!=CLOCK_SYNCH_PORT) && (i<MAX_RETRY_CLOCK_SYNCH)); i++) //
     {
         debug("\n%i. Waiting for a server message dude\n",i);
         ThisThread::sleep_for(5000);
-        retcode=send_message(223, dummy,1);
-        if(retcode<0)
-        {
-            return retcode;
-        }
-        retcode=receive_message(rx_dec_buffer,port,retcode);
+        send_message(223, dummy,1);
+        receive_message(rx_dec_buffer,port,retcode);
         if(port == CLOCK_SYNCH_PORT && retcode>0)
         {
             unix_time=rx_dec_buffer[0];
         }
+        
     }
-    return retcode;
+    return LORAWAN_STATUS_OK;
  }
 
 /** Put the RF module in sleep mode & lorawan disconnect the current session..
@@ -312,8 +304,8 @@ void LorawanTP::lora_event_handler(lorawan_event_t event)
         case JOIN_FAILURE:
         case UPLINK_REQUIRED:
         case AUTOMATIC_UPLINK_ERROR:
-             debug("\nFailure\n");
-            ev_queue.break_dispatch();
+            debug("\nFailure\n");
+            //ev_queue.break_dispatch();
             break;
         default:
             MBED_ASSERT("Unknown Event");
