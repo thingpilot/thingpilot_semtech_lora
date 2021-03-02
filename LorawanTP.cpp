@@ -89,7 +89,7 @@ int LorawanTP::join(const device_class_t device_class)
 
     int x=0;
     /**TODO: CHECK with OTAA and ABP return codes*/
-    while ( retcode != LORAWAN_STATUS_OK && x>3) 
+    while ( retcode != LORAWAN_STATUS_OK && x > 3) 
     {
         debug("\r\nNot connected, retcode %d\r\n",retcode);
         if (  retcode == LORAWAN_STATUS_CONNECT_IN_PROGRESS || retcode == LORAWAN_STATUS_ALREADY_CONNECTED
@@ -118,7 +118,7 @@ int LorawanTP::join(const device_class_t device_class)
 int LorawanTP::send_message(uint8_t port, uint8_t payload[], uint16_t length) 
 {   
     int retcode = 0;
-    // retcode = join(CLASS_C);
+    retcode = join(CLASS_C);
     // if(retcode < 0)
     // {
     //    // return retcode;
